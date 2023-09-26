@@ -1,0 +1,376 @@
+---
+title: "The workflow of building SFC model on the Polish economy"
+author: "Iwo Augustyński"
+format:
+  revealjs:
+    incremental: false 
+    theme: moon
+    logo: WUEB_horizontal_RGB_color_1.png
+    footer: "International Workshop on Empirical Stock-Flow Consistent Modelling" 
+    preview-links: false
+    self-contained: true
+    transition: fade
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+ library(openxlsx)
+# library(dplyr)
+# library(stringr)
+# library(ggplot2)
+```
+
+## The workflow
+
+![](flow.png){.absolute top="300"}
+
+## Model
+
+<br>
+
+1.  What is the research question?
+2.  Start from scratch or use existing model?
+
+-   We decided to use quarterly model of the Danish economy
+
+3.  Balance sheet matrix
+4.  Transaction matrix
+5.  Behavioural equations
+
+## Data dictionary
+
+<br>
+
+An excel file with three sheets:
+
+1.  Variables - a list of all model variables along with information that uniquely identifies them in the Eurostat database,
+2.  Equations - a list of all equations in the model along with the form required for estimating structural parameters,
+3.  Parameters - a list of all parameter values estimated during the tool's execution.
+
+
+```{r}
+# openxlsx::openXL("./data/dictionary.xlsx")
+# wb <- openxlsx::read.xlsx("./data/dictionary.xlsx")
+# wb$open()
+```
+
+## Data download
+
+<br>
+
+A script where automatic data retrieval from the Eurostat database is implemented. What it does:
+
+<br>
+
+1.  It retrieves all used Eurostat tables
+2.  It creates raw variables from Eurostat tables
+3.  It counducts custom calculations
+
+## Data Validation
+
+This script implements tools for validating the downloaded data and model equations.
+
+The script consists of four parts:
+
+1.  Review of raw time series
+2.  Transaction Matrix
+3.  Balance Sheet Matrix
+4.  Validation of Model Equations
+
+The entire analysis in this section is performed using a custom function called `validate()`.
+
+## Data Transformation {.smaller}
+
+<br>
+
+In this step data transformation from raw data frame to a modeling-ready data frame is implemented.
+
+The script consists of following parts:
+
+1.  **Data Imputation**: all missing values in the data frame are filled using the `imputeTS::na_seadec()` function.
+2.  **Seasonal Decomposition of Variables**: the seasonality of each variable is tested.
+    -   De-seasonalized series, labeled with the original variable name.
+    -   Seasonal component, labeled with a variable name suffixed with `_seas`.
+    -   Original time series with seasonality, labeled with a variable name suffixed with `_og`.
+3.  **Creation of Auxiliary Variables**: auxiliary variables can be added to the data frame for modeling (incl. dummy variables)
+
+## Parameter Estimation
+
+<br>
+
+1.  **Editing Equations**: a user has the option of semi-automatically editing parametric equations using the interactive custom function `restimate()`.
+2.  **Parameter Estimation**
+3.  **Saving Data**: If during the script execution, equation formulas and parameter values change, they will be overwritten in the provided dictionary successively in the Equations and Parameters sheets.
+
+## Empirical Model
+
+<br>
+
+Running the model of the Polish economy with the `godley` package.
+
+Implementation of scenarios.
+
+## Some results {.scrollable}
+
+```{r}
+# Config
+here::i_am("R/5_Model_SFC_Poland.R")
+source(here::here("R/0_config.R"))
+
+# Reading data
+data <- read_csv2(here("data/data.csv"))
+seasonality <- read_csv2(here("data/seasonality.csv"))
+param <- read_csv2(here("data/parameters.csv"))
+equations <- read_excel(here("data/dictionary.xlsx"), sheet = "Equations") %>%
+  pull(Equation)
+param <- read_excel(here("data/dictionary.xlsx"), sheet = "Parameters") %>%
+  select(Name, Parameter) %>%
+  pivot_wider(names_from = Name, values_from = Parameter)
+
+
+# 1. Model initialization--------------------------------------------------
+model <- create_model(name = "Poland")
+
+# Variables
+for (i in 2:ncol(data)) {
+  model <- model %>% add_variable(colnames(data[i]), data[[i]])
+}
+
+# Parametry
+for (i in 1:ncol(param)) {
+  model <- model %>% add_variable(colnames(param[i]), param[[i]])
+}
+
+# Equations
+for (i in equations) {
+  model <- model %>% add_equation(i)
+}
+
+# 2. Simulation  ------------------------------------------------------------
+model <- simulate_scenario(
+  model,
+  start_date = data$time[1], periods = nrow(data)
+)
+
+# 3. Review of results -----------------------------------------------------
+# Adding seasonality
+data_out <- model$baseline$result
+data_out_seas <- add_seasonality(data_out, seasonality)
+data_seas <- add_seasonality(data, seasonality)
+```
+
+```{r}
+# Plot
+see_fit("Y", data, data_out)
+```
+
+```{r}
+see_fit("Y", data_seas, data_out_seas)
+```
+
+## Scenario - Increase in interest rates
+
+```{r}
+#| out.width: "80%"
+
+
+# 4. Scenarios - shocks --------------------------------------------------
+# 4.1. Increase in interest rates
+shock_1 <- create_shock() %>%
+  add_shock(
+    c("chi", "r_A_H", "r_N", "r_L_H", "r_G"),
+    rate = 5, start = "2015-01-01"
+  )
+model <- model %>%
+  add_scenario("rates", shock = shock_1) %>%
+  simulate_scenario()
+
+plot_simulation(model, c("baseline", "rates"), expressions = "I")
+```
+
+## Scenario - Growth of taxes
+
+```{r}
+#| out.width="80%"
+
+shock_2 <- create_shock() %>%
+  add_shock(c("par_T_N_1", "par_T_H_1"),
+            rate = 0.1,
+            start = "2015-01-01", end = "2016-10-01"
+  )
+model <- model %>%
+  add_scenario("taxes", shock = shock_2) %>%
+  simulate_scenario()
+
+plot_simulation(model, c("baseline", "taxes"), expressions = "C")
+```
+
+## Scenario - Wage increase
+
+```{r}
+#| out.width="90%"
+
+shock_4 <- create_shock() %>%
+  add_shock("par_W_1", rate = 0.1, start = "2015-01-01")
+model <- model %>%
+  add_scenario("wages", shock = shock_4) %>%
+  simulate_scenario()
+
+plot_simulation(model, c("baseline", "wages"), expressions = "C")
+```
+
+## Sensivity analysis
+
+```{r}
+#| out.width="80%"
+
+# Research on the sensitivity of the household taxation parameter
+model_sen <- model %>%
+  create_sensitivity(
+    variable = "par_T_H_1", lower = 0.02, upper = 0.08, step = 0.01
+  ) %>%
+  simulate_scenario(start_date = data$time[1], periods = nrow(data))
+
+plot_simulation(
+  model_sen,
+  scenario = "sensitivity", take_all = T, expressions = "C"
+)
+```
+
+## Model script {.scrollable}
+
+``` r
+# Config
+here::i_am("R/5_Model_SFC_Poland.R")
+source(here::here("R/0_config.R"))
+
+# Reading data
+data <- read_csv2(here("data/data.csv"))
+seasonality <- read_csv2(here("data/seasonality.csv"))
+param <- read_csv2(here("data/parameters.csv"))
+equations <- read_excel(here("data/dictionary.xlsx"), sheet = "Equations") %>%
+  pull(Equation)
+param <- read_excel(here("data/dictionary.xlsx"), sheet = "Parameters") %>%
+  select(Name, Parameter) %>%
+  pivot_wider(names_from = Name, values_from = Parameter)
+
+
+# 1. Model initialization--------------------------------------------------
+model <- create_model(name = "Poland")
+
+# Variables
+for (i in 2:ncol(data)) {
+  model <- model %>% add_variable(colnames(data[i]), data[[i]])
+}
+
+# Parametry
+for (i in 1:ncol(param)) {
+  model <- model %>% add_variable(colnames(param[i]), param[[i]])
+}
+
+# Equations
+for (i in equations) {
+  model <- model %>% add_equation(i)
+}
+
+# 2. Simulation  ------------------------------------------------------------
+model <- simulate_scenario(
+  model,
+  start_date = data$time[1], periods = nrow(data)
+)
+
+# 3. Review of results -----------------------------------------------------
+# Adding seasonality
+data_out <- model$baseline$result
+data_out_seas <- add_seasonality(data_out, seasonality)
+data_seas <- add_seasonality(data, seasonality)
+
+# Plot
+see_fit("Y", data, data_out)
+see_fit("Y", data_seas, data_out_seas)
+
+# 4. Scenarios - shocks --------------------------------------------------
+# 4.1. Increase in interest rates
+shock_1 <- create_shock() %>%
+  add_shock(
+    c("chi", "r_A_H", "r_N", "r_L_H", "r_G"),
+    rate = 5, start = "2015-01-01"
+  )
+model <- model %>%
+  add_scenario("rates", shock = shock_1) %>%
+  simulate_scenario()
+
+plot_simulation(model, c("baseline", "rates"), expressions = "I")
+
+# 4.2. Growth of taxes
+shock_2 <- create_shock() %>%
+  add_shock(c("par_T_N_1", "par_T_H_1"),
+            rate = 0.1,
+            start = "2015-01-01", end = "2016-10-01"
+  )
+model <- model %>%
+  add_scenario("taxes", shock = shock_2) %>%
+  simulate_scenario()
+
+plot_simulation(model, c("baseline", "taxes"), expressions = "C")
+
+# 4.3. Growth of government spending
+shock_3 <- create_shock() %>%
+  add_shock("G",
+            rate = 0.1,
+            start = "2015-01-01", end = "2015-10-01"
+  )
+model <- model %>%
+  add_scenario("government_spending", shock = shock_3) %>%
+  simulate_scenario()
+
+plot_simulation(
+  model, c("baseline", "government_spending"),
+  expressions = "C"
+)
+
+# 4.4. Wage increase
+shock_4 <- create_shock() %>%
+  add_shock("par_W_1", rate = 0.1, start = "2015-01-01")
+model <- model %>%
+  add_scenario("wages", shock = shock_4) %>%
+  simulate_scenario()
+
+plot_simulation(model, c("baseline", "wages"), expressions = "C")
+
+# 4.5. Increase of unemployment
+shock_5 <- create_shock() %>%
+  add_shock("par_N_1", rate = -0.1, start = "2015-01-01")
+model <- model %>%
+  add_scenario("unemployment", shock = shock_5) %>%
+  simulate_scenario()
+
+plot_simulation(model, c("baseline", "unemployment"), expressions = "C")
+
+# 6. Sensitivity ----------------------------------------------------------
+# Research on the sensitivity of the household taxation parameter
+model_sen <- model %>%
+  create_sensitivity(
+    variable = "par_T_H_1", lower = 0.02, upper = 0.08, step = 0.01
+  ) %>%
+  simulate_scenario(start_date = data$time[1], periods = nrow(data))
+
+plot_simulation(
+  model_sen,
+  scenario = "sensitivity", take_all = T, expressions = "C"
+)
+
+# 6. Saving the model and data -------------------------------------------
+saveRDS(model, file = here("data/model.Rds"))
+write_csv2(data_out, here("data/data_out.csv"), na = "")
+write_csv2(data_out_seas, here("data/data_out_seas.csv"), na = "")
+```
+
+## Full list of people involved in work on the model:
+
+<br>
+
+-   Iwo Augustyński, Wroclaw University of Economics and Business - scientific supervision and model building,
+-   Michał Możdżeń, Krakow University of Economics - data preparation,
+-   Maciej Grodzicki, Jagiellonian University - parameter estimation,
+-   Julian Kacprzak - software engineer.
