@@ -1,11 +1,11 @@
 ---
-title: "The workflow of building SFC model on the Polish economy"
+title: "The workflow of building SFC model for the Polish economy"
 author: "Iwo Augustyński"
 format:
   revealjs:
     incremental: false 
     theme: moon
-    logo: WUEB_horizontal_RGB_color_1.png
+    logo: WUEB_horizontal_RGB_color_2.png
     footer: "International Workshop on Empirical Stock-Flow Consistent Modelling" 
     preview-links: false
     self-contained: true
@@ -20,6 +20,14 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
 # library(ggplot2)
 ```
 
+## Introduction
+
+<br>
+
+We were asked to build a SFC model for the Polish Ministry of State Assets.
+People who will use the model had no idea about SFC modeling. Their were econometricians and neoclassical economists.
+
+
 ## The workflow
 
 ![](flow.png){.absolute top="300"}
@@ -28,10 +36,10 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
 
 <br>
 
-1.  What is the research question?
-2.  Start from scratch or use existing model?
+1.  What is the research question? Scenarios, forecasting?
+2.  Start from scratch or use existing model? Model complexity.Time limits.
 
--   We decided to use quarterly model of the Danish economy
+-   We decided to use quarterly model of the Danish economy (sankey plot!)
 
 3.  Balance sheet matrix
 4.  Transaction matrix
@@ -136,7 +144,7 @@ for (i in 2:ncol(data)) {
   model <- model %>% add_variable(colnames(data[i]), data[[i]])
 }
 
-# Parametry
+# Parameters
 for (i in 1:ncol(param)) {
   model <- model %>% add_variable(colnames(param[i]), param[[i]])
 }
@@ -263,7 +271,7 @@ for (i in 2:ncol(data)) {
   model <- model %>% add_variable(colnames(data[i]), data[[i]])
 }
 
-# Parametry
+# Parameters
 for (i in 1:ncol(param)) {
   model <- model %>% add_variable(colnames(param[i]), param[[i]])
 }
@@ -365,6 +373,14 @@ saveRDS(model, file = here("data/model.Rds"))
 write_csv2(data_out, here("data/data_out.csv"), na = "")
 write_csv2(data_out_seas, here("data/data_out_seas.csv"), na = "")
 ```
+
+## Sources
+
+<br>
+
+https://github.com/IwoA/Aalborg_workshop
+https://github.com/gamrot/godley
+
 
 ## Full list of people involved in work on the model:
 
